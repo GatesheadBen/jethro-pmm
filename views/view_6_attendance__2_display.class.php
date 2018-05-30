@@ -175,7 +175,7 @@ class View_Attendance__Display extends View
 		}
 		echo '</h3>';
 		$params = Array();
-		if ($this->age_brackets) $params['(age_bracket'] = $this->age_brackets;
+		if ($this->age_brackets) $params['(age_bracketid'] = $this->age_brackets;
 		if ($this->statuses) $params['(status'] = $this->statuses;
 		
 		foreach ($this->statuses as $status) {
@@ -347,7 +347,7 @@ class View_Attendance__Display extends View
 		$dummy = new Person();
 
 		$params = Array();
-		if ($this->age_brackets) $params['(age_bracket'] = $this->age_brackets;
+		if ($this->age_brackets) $params['(age_bracketid'] = $this->age_brackets;
 		if ($this->statuses) $params['(status'] = $this->statuses;
 		
 		$all_persons = Attendance_Record_Set::getPersonDataForCohorts($this->cohortids, $params);
@@ -378,6 +378,7 @@ class View_Attendance__Display extends View
 		}
 		$all_dates = array_unique($all_dates);
 		?>
+		<form method="post" action="" class="bulk-person-action">
 		<table class="table table-hover table-condensed table-auto-width valign-middle table-bordered parallel-attendance-report">
 			<thead>
 				<tr>
@@ -422,7 +423,8 @@ class View_Attendance__Display extends View
 							$group = $GLOBALS['system']->getDBObject('person_group', $id);
 							$name = $group->getValue('name');
 						}
-						$short = reset(explode(' ', $name));
+						$name_bits = explode(' ', $name);
+						$short = reset($name_bits);
 						if ((strlen($short) > 5) && !preg_match('/[0-9]/', $short)) $short = substr($short, 0, 3).'…';
 						$class = $first ? 'new-cohort' : '';
 						?>
@@ -581,7 +583,9 @@ class View_Attendance__Display extends View
 		</table>
 		<?php
 		include 'templates/bulk_actions.template.php';
-
+		?>
+		</form>
+		<?php
 	}
 }
 ?>

@@ -57,19 +57,16 @@ function strip_all_slashes() {
 
 function bam($x)
 {
-	echo '<pre style="text-align: left">';
-	print_r($x);
-	echo '</pre>';
-}
-
-
-function check_db_result(&$res)
-{
-	if (PEAR::isError($res)) {
-		trigger_error("Database Error: ".print_r($res->userinfo, 1), E_USER_ERROR);
-		exit();
+	if (php_sapi_name() == 'cli') {
+		print_r($x);
+		echo "\n";
+	} else {
+		echo '<pre style="text-align: left">';
+		print_r($x);
+		echo '</pre>';
 	}
 }
+
 
 function format_datetime($d)
 {
@@ -141,10 +138,14 @@ function dump_messages()
 
 function print_message($msg, $class='success', $html=FALSE)
 {
-	if ($class == 'failure') $class='error';
-	?>
-	<div class="alert alert-<?php echo $class; ?>"><?php echo $html ? $msg : ents($msg); ?></div>
-	<?php
+	if (php_sapi_name() == 'cli') {
+		echo strtoupper($class).': '.$msg."\n";
+	} else {
+		if ($class == 'failure') $class='error';
+		?>
+		<div class="alert alert-<?php echo $class; ?>"><?php echo $html ? $msg : ents($msg); ?></div>
+		<?php
+	}
 }
 
 
@@ -208,10 +209,9 @@ function print_widget($name, $params, $value)
 			if (array_get($params, 'toolbar') == 'basic') {
 				$ckParams = "
 					toolbar: [
-						{ name: 'styles', items: [ 'Format' ] },
+						{ name: 'paragraph', items: [ 'NumberedList', 'BulletedList' ] },
 						{ name: 'basicstyles', items : ['Bold', 'Italic', 'Underscore', 'RemoveFormat'] },
-						{ name: 'paragraph', items: [ 'NumberedList', 'BulletedList' ] }
-
+						{ name: 'styles', items: [ 'Format' ] },
 					],
 					removePlugins: 'elementspath',
 					resize_enabled: false,
@@ -225,6 +225,11 @@ function print_widget($name, $params, $value)
 			if ($height = array_get($params, 'height')) {
 				$ckParams .= "
 					height: '{$height}',
+				";
+			}
+			if ($toolbarLocation = array_get($params, 'toolbarLocation')) {
+				$ckParams .= "
+					toolbarLocation: '{$toolbarLocation}',
 				";
 			}
 			?>
@@ -248,15 +253,25 @@ function print_widget($name, $params, $value)
 			<input type="text" name="<?php echo $name; ?>" value="<?php echo $value; ?>" class="<?php echo trim($classes); ?>" <?php echo $width_exp; ?> <?php echo $attrs; ?> />
 			<?php
 			break;
+		case 'boolean':
+		case 'bool':
+			if (empty($params['options'])) {
+				$params['type'] = 'checkbox';
+				return print_widget($name, $params, $value);
+			}
+			// deliberate fallthrough...
 		case 'select':
 			$our_val = Array();
-			if ($value !== NULL && (isset($params['options']['']) || $value !== '')) {
+			if (!empty($params['allow_multiple']) && $value === '*') {
+				// magic value to select all
+				$our_val = array_keys($params['options']);
+			} else if ($value !== NULL && (isset($params['options']['']) || $value !== '')) {
 				$our_val = is_array($value) ? $value : Array("$value");
 			}
 			foreach ($our_val as $k => $v) $our_val[$k] = "$v";
 			if (array_get($params, 'style', 'dropbox') == 'colour-buttons') {
 				?>
-				<div class="radio-button-group <?php echo array_get($params, 'class', ''); ?>" 
+				<div class="radio-button-group <?php echo array_get($params, 'class', ''); ?>"
 					 <?php
 					 if (!SizeDetector::isNarrow()) echo ' tabindex="1"';
 					 ?>
@@ -267,8 +282,8 @@ function print_widget($name, $params, $value)
 					$classes = 'btn value-'.$k;
 					if (in_array("$k", $our_val, true)) $classes .= ' active';
 					?>
-					<div 
-						class="<?php echo $classes; ?>" 
+					<div
+						class="<?php echo $classes; ?>"
 						title="<?php echo $v; ?>"
 						data-val="<?php echo $k; ?>"
 					>
@@ -282,7 +297,8 @@ function print_widget($name, $params, $value)
 			} else if (array_get($params, 'allow_multiple')) {
 				$height = array_get($params, 'height', min(count($params['options']), 4));
 				if (substr($name, -2) != '[]') $name .= '[]';
-				$style = 'height: '.($height*1.7).'em';
+				$style = '';
+				if ($height > 0) $style = 'height: '.($height*1.7).'em';
 				$classes .= ' multi-select';
 				// the empty onclick below is to make labels work on iOS
 				// see http://stackoverflow.com/questions/5421659/html-label-command-doesnt-work-in-iphone-browser
@@ -383,6 +399,7 @@ function print_widget($name, $params, $value)
 				$options = $GLOBALS['system']->getDBObjectData($params['references'], $where, $where_logic, array_get($params, 'order_by'));
 				$dummy = new $params['references']();
 				$our_val = is_array($value) ? $value : (empty($value) ? Array() : Array($value));
+				$default = NULL;
 				if (!empty($params['filter']) && is_callable($params['filter'])) {
 					foreach ($options as $i => $o) {
 						$dummy->populate($i, $o);
@@ -395,8 +412,10 @@ function print_widget($name, $params, $value)
 				foreach ($options as $k => $details) {
 					$dummy->populate($k, $details);
 					$params['options'][$k] = $dummy->toString();
+					if (!empty($details['is_default'])) $default = $k;
 				}
 				$params['type'] = 'select';
+				if (empty($params['allow_empty']) && ($value === '')) $value = $default;
 				print_widget($name, $params, $value);
 			}
 			break;
@@ -451,7 +470,7 @@ function print_widget($name, $params, $value)
 		case 'checkbox':
 			?>
 			<input type="checkbox" name="<?php echo ents($name); ?>" value="1"
-				   <?php 
+				   <?php
 				   if ($value) echo 'checked="checked" ';
 				   echo $attrs;
 				   ?>
@@ -459,6 +478,15 @@ function print_widget($name, $params, $value)
 			<?php
 			break;
 	}
+	static $toolTipID = 1;
+	if (!empty($params['tooltip'])) {
+		?>
+		<i class="clickable icon-question-sign" data-toggle="visible" data-target="#tooltip<?php echo $toolTipID; ?>"></i>
+		<div class="help-block custom-field-tooltip" id="tooltip<?php echo $toolTipID; ?>"><?php echo nl2br(ents($params['tooltip'])); ?></div>
+		<?php
+		$toolTipID++;
+	}
+
 }
 
 function process_widget($name, $params, $index=NULL, $preserveEmpties=FALSE)
@@ -551,6 +579,13 @@ function process_widget($name, $params, $index=NULL, $preserveEmpties=FALSE)
 			if (isset($rawVal)) {
 				require_once 'htmLawed.php';
 				$value = htmLawed($rawVal, array('deny_attribute' => '* -href', 'safe'=>1));
+			}
+			break;
+		case 'reference':
+			if (!array_key_exists($name, $_REQUEST)) {
+				$value = NULL;
+			} else {
+				$value = (int)$rawVal;
 			}
 			break;
 		default:
@@ -680,7 +715,7 @@ function get_phone_format_lengths($formats)
 	}
 	return array_unique($lengths);
 }
-	
+
 
 function is_valid_phone_number($x, $formats)
 {
@@ -736,7 +771,7 @@ function get_email_href($to, $name=NULL, $bcc=NULL, $subject=NULL)
 	$sep = defined('MULTI_EMAIL_SEPARATOR') ? MULTI_EMAIL_SEPARATOR : ',';
 	if (!empty($to)) $to = implode($sep, (array)$to);
 	if (!empty($bcc)) $bcc = implode($sep, (array)$bcc);
-	
+
 	if (function_exists('custom_email_href')) return custom_email_href($to, $name, $bcc, $subject);
 
 	// Chrome on mac with mac:mail as the mailto handler cannot cope with fullname in the address
@@ -777,9 +812,9 @@ function generate_random_string($chars=16)
 		}
 		return $res;
 	}
-	
+
 	$pr_bits = '';
-	
+
 	if (function_exists('openssl_random_pseudo_bytes')) {
 		$pr_bits = openssl_random_pseudo_bytes($chars);
 	} else {
@@ -807,7 +842,7 @@ function generate_random_string($chars=16)
 			}
 		}
 	}
-	
+
 	if (empty($pr_bits)) {
 		trigger_error("Could not generate random string", E_USER_ERROR);
 	}
@@ -815,14 +850,14 @@ function generate_random_string($chars=16)
 	if (strlen($pr_bits) < $chars) {
 		trigger_error("Generated random string not long enough (only ".strlen($pr_bits));
 	}
-	
+
 	$validChars = array_merge(range(0,9), range('A', 'Z'), range('a', 'z'));
 	for ($i=0; $i < strlen($pr_bits); $i++) {
 		if (!preg_match('/[A-Za-z0-9]/', $pr_bits[$i])) {
 			$pr_bits[$i] = $validChars[ord($pr_bits[$i]) % count($validChars)];
 		}
 	}
-	
+
 	return $pr_bits;
 }
 

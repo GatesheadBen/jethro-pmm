@@ -1,6 +1,5 @@
 <?php
 
-require_once 'MDB2/Date.php';
 class db_object
 {
 
@@ -47,7 +46,6 @@ class db_object
 			$this->loadDefaults();
 		}
 	}
-
 
 	public function getInitSQL($table_name=NULL)
 	{
@@ -117,6 +115,10 @@ class db_object
 					$type = 'text';
 					$default = FALSE; // text columns cannot have a default
 					break;
+				case 'boolean':
+				case 'bool':
+					$type = 'TINYINT(1) UNSIGNED NOT NULL';
+					$default = array_get($details, 'default', 0);
 			}
 
 			switch ($default) {
@@ -135,7 +137,7 @@ class db_object
 				";
 		}
 		$res .= "PRIMARY KEY (`id`)".$indexes."
-			) ENGINE=InnoDB";
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8";
 		return $res;
 	}
 
@@ -151,7 +153,7 @@ class db_object
 
 	/**
 	 *
-	 * @return Array (columnName => referenceExpression) eg 'tagid' => 'tagoption.id ON DELETE CASCADE'
+	 * @return Array ([tablename.]columnName => referenceExpression) eg '`tagid`' => '`tagoption`(`id`) ON DELETE CASCADE'
 	 */
 	public function getForeignKeys()
 	{
@@ -202,6 +204,10 @@ class db_object
 			if (array_get($details, 'readonly')) continue;
 			$flds[] = $name;
 			$v = array_get($this->values, $name, '');
+			if (($v === '') && (($details['type'] == 'date') || $details['type'] == 'datetime')) {
+				// Mysql strict mode doesn't like blank strings being inserted into datetime cols
+				$v = NULL;
+			}
 			if ($details['type'] == 'serialise') {
 				$vals[] = $db->quote(serialize($v));
 			} else {
@@ -219,7 +225,6 @@ class db_object
 		$sql = 'INSERT INTO '.strtolower(get_class($this)).' ('.implode(', ', $flds).')
 				 VALUES ('.implode(', ', $vals).')';
 		$res = $db->query($sql);
-		check_db_result($res);
 		if (empty($this->id)) $this->id = $db->lastInsertId();
 		$this->_old_values = Array();
 		return TRUE;
@@ -266,9 +271,9 @@ class db_object
 		$db =& $GLOBALS['db'];
 		$sql = 'SELECT *
 				FROM '.strtolower($this->_getTableNames()).'
-				WHERE '.strtolower(get_class($this)).'.id = '.$db->quote($id);
+				WHERE '.strtolower(get_class($this)).'.id = '.$db->quote($id) .'
+				LIMIT 1';
 		$res = $db->queryRow($sql);
-		check_db_result($res);
 		if (!empty($res)) {
 			$this->id = $res['id'];
 			unset($res['id']);
@@ -286,6 +291,9 @@ class db_object
 	{
 		foreach ($this->fields as $id => $details) {
 			$this->values[$id] = array_get($details, 'default', '');
+			if (($details['type'] == 'reference') && empty($this->values[$id])) {
+				$this->values[$id] = NULL;
+			}
 		}
 	}
 
@@ -317,7 +325,8 @@ class db_object
 			$changes = $this->_getChanges();
 			if ($changes) {
 				$user = $GLOBALS['user_system']->getCurrentPerson();
-				$this->values['history'][time()] = 'Updated by '.$user['first_name'].' '.$user['last_name'].' (#'.$user['id'].")\n".implode("\n", $changes);
+				$now = time();
+				$this->values['history'][$now] = 'Updated by '.$user['first_name'].' '.$user['last_name'].' (#'.$user['id'].")\n".implode("\n", $changes);
 				$this->_old_values['history'] = 1;
 			}
 		}
@@ -327,7 +336,7 @@ class db_object
 		// Set any last-changed fields
 		foreach ($this->_old_values as $i => $v) {
 			if (array_key_exists($i.'_last_changed', $this->fields)) {
-				$this->values[$i.'_last_changed'] = date('c');
+				$this->values[$i.'_last_changed'] = date('Y-m-d H:i:s');
 				$this->_old_values[$i.'_last_changed'] = 1;
 			}
 		}
@@ -340,6 +349,7 @@ class db_object
 				return FALSE;
 			}
 		}
+
 		// Update the DB
 		$db =& $GLOBALS['db'];
 		$sets = Array();
@@ -364,11 +374,10 @@ class db_object
 					SET '.implode("\n, ", $sets).'
 					WHERE id = '.$db->quote($this->id);
 			$res = $db->query($sql);
-			check_db_result($res);
 		}
 
 		$this->_old_values = Array();
-		
+
 		if ($acquiredLock) $this->releaseLock();
 
 		return TRUE;
@@ -415,7 +424,6 @@ class db_object
 		while ($table_name != 'db_object') {
 			$sql = 'DELETE FROM '.$table_name.' WHERE id='.$db->quote($this->id);
 			$res = $db->query($sql);
-			check_db_result($res);
 			$table_name = strtolower(get_parent_class($table_name));
 		}
 		$GLOBALS['system']->doTransaction('commit');
@@ -477,7 +485,7 @@ class db_object
 				}
 			}
 		}
-		if (array_key_exists($name, $this->values) && ($this->values[$name] != $value) && !isset($this->_old_values[$name])) {
+		if (array_key_exists($name, $this->values) && ($this->values[$name] != $value) && !array_key_exists($name, $this->_old_values)) {
 			$this->_old_values[$name] = $this->values[$name];
 		}
 		$this->values[$name] = $value;
@@ -533,7 +541,7 @@ class db_object
 		<?php
 	}
 
-	
+
 	protected function _printSummaryRows()
 	{
 		foreach ($this->fields as $name => $details) {
@@ -652,7 +660,7 @@ class db_object
 <div class="control-group">
 	<label class="control-label" for="<?php echo $name; ?>"><?php echo _($this->getFieldLabel($name)); ?></label>
 	<div class="controls">
-		<?php 
+		<?php
 			$this->printFieldInterface($name, $prefix);
 			if (!empty($this->fields[$name]['note'])) {
 				echo '<p class="help-inline">'.$this->fields[$name]['note'].'</p>';
@@ -707,9 +715,17 @@ class db_object
 	{
 		if (!$this->id || $this->haveLock()) {
 			$value = process_widget($prefix.$name, $this->fields[$name]);
-			if (!is_null($value)) $this->setValue($name, $value);
+			if ($value !== NULL) {
+				if (($this->fields[$name]['type'] == 'reference') && ($value === 0)) {
+					// process_widget returns 0 when the user selects the 'empty' option
+					// but we want to save NULL to the db.
+					$value = NULL;
+				}
+				$this->setValue($name, $value);
+			}
+		} else {
+			trigger_error("Could not save value for object #".$this->id." because we do not hold the lock");
 		}
-
 	}
 
 
@@ -725,6 +741,14 @@ class db_object
 		}
 	}
 
+	public static function getLockLength()
+	{
+		// this is to work around older config that had the word "minutes" in the config.
+		$lockLength = LOCK_LENGTH;
+		if (FALSE === strpos($lockLength, ' ')) $lockLength .= ' minutes';
+		return $lockLength;
+	}
+
 	public function haveLock($type='')
 	{
 		if (!empty($GLOBALS['JETHRO_INSTALLING'])) return TRUE;
@@ -736,9 +760,8 @@ class db_object
 						AND objectid = '.$db->quote($this->id).'
 						AND lock_type = '.$db->quote($type).'
 						AND userid = '.$GLOBALS['user_system']->getCurrentPerson('id').'
-						AND expires > '.$db->quote(MDB2_Date::unix2Mdbstamp(time()));
+						AND expires > NOW()';
 			$this->_held_locks[$type] = $db->queryOne($sql);
-			check_db_result($this->_held_locks[$type]);
 		}
 		return $this->_held_locks[$type];
 	}
@@ -753,9 +776,8 @@ class db_object
 					WHERE object_type = '.$db->quote(strtolower(get_class($this))).'
 						AND lock_type = '.$db->quote($type).'
 						AND objectid = '.$db->quote($this->id).'
-						AND expires > '.$db->quote(MDB2_Date::unix2Mdbstamp(time()));
+						AND expires > NOW()';
 			$res = $db->queryOne($sql);
-			check_db_result($res);
 			if ($res == $GLOBALS['user_system']->getCurrentPerson('id')) {
 				$this->_acquirable_locks[$type] = TRUE; // already got it, what the heck
 				$this->_held_locks[$type] = TRUE;
@@ -771,6 +793,8 @@ class db_object
 		if (!$this->id) return TRUE;
 		if ($this->haveLock($type)) return TRUE;
 		if (!$this->canAcquireLock($type)) return FALSE;
+		$bits = explode(' ', self::getLockLength());
+		$mins = reset($bits);
 		$db =& $GLOBALS['db'];
 		$sql = 'INSERT INTO db_object_lock (objectid, object_type, lock_type, userid, expires)
 				VALUES (
@@ -778,17 +802,15 @@ class db_object
 					'.$db->quote(strtolower(get_class($this))).',
 					'.$db->quote($type).',
 					'.$db->quote($GLOBALS['user_system']->getCurrentPerson('id')).',
-					'.$db->quote(MDB2_Date::unix2Mdbstamp(strtotime('+'.LOCK_LENGTH))).')';
+					NOW() + INTERVAL '.$db->quote($mins).' MINUTE)';
 		$res = $db->query($sql);
-		check_db_result($res);
 		$this->_held_locks[$type] = TRUE;
 		$this->_acquirable_locks[$type] = TRUE;
 
-		if (rand(LOCK_CLEANUP_PROBABLILITY, 100) == 100) {
+		if (rand(10, 100) == 100) {
 			$sql = 'DELETE FROM db_object_lock
-					WHERE expires < '.$db->quote(MDB2_Date::unix2Mdbstamp(time()));
+					WHERE expires < NOW()';
 			$res = $db->query($sql);
-			check_db_result($res);
 		}
 
 		return TRUE;
@@ -804,9 +826,11 @@ class db_object
 		$db = $GLOBALS['db'];
 		$SQL = 'DELETE FROM db_object_lock
 				WHERE userid = '.$db->quote($userid);
-		$res = $db->query($SQL);
-		// We actually don't care if this fails - it shouldn't hold up the logout.
-		//check_db_result($res);
+		try {
+			$res = $db->query($SQL);
+		} catch (PDOException $e) {
+			// We actually don't care if this fails - it shouldn't hold up the logout.
+		}
 	}
 
 
@@ -819,7 +843,6 @@ class db_object
 					AND lock_type = '.$db->quote($type).'
 					AND object_type = '.$db->quote(strtolower(get_class($this)));
 		$res = $db->query($sql);
-		check_db_result($res);
 		$this->_held_locks[$type] = FALSE;
 		$this->_acquirable_locks[$type] = NULL;
 	}
@@ -852,15 +875,29 @@ class db_object
 			} else if ($field[0] == '<') {
 				$operator = '<';
 				$field = substr($field, 1);
+				if ($field[0] == '=') {
+					$operator .= '=';
+					$field = substr($field, 1);
+				}
 			} else if ($field[0] == '>') {
 				$operator = '>';
 				$field = substr($field, 1);
+				if ($field[0] == '=') {
+					$operator .= '=';
+					$field = substr($field, 1);
+				}				
 			} else if ($field[0] == '-') {
 				$operator = 'BETWEEN';
 				$field = substr($field, 1);
 			} else if ($field[0] == '(') {
 				$operator = 'IN';
 				$field = substr($field, 1);
+			} else if ($field[0] == '_') {
+				// beginning-of-word match
+				$operator = 'WORDBEGIN';
+				$field = substr($field, 1);
+			} else if ($val === NULL) {
+				$operator = 'IS';
 			}
 			$raw_field = $field;
 			if ($field == 'id') {
@@ -870,6 +907,15 @@ class db_object
 			}
 			if (isset($this->fields[$raw_field]) && $this->fields[$raw_field]['type'] == 'text') {
 				$field = 'LOWER('.$field.')';
+			}
+			if ($operator == 'BETWEEN') {
+				if ($val[1] === NULL) {
+					$operator = '>=';
+					$val = $val[0];
+				} else if ($val[0] === NULL) {
+					$operator = '<=';
+					$val = $val[1];
+				}
 			}
 			if ($operator == 'IN') {
 				if (is_array($val)) {
@@ -881,6 +927,8 @@ class db_object
 				}
 				$val = '('.$val.')'; // If val wasn't an array we dont quote it coz it's a subquery
 				$wheres[] = '('.$prefix.$field.' '.$operator.' '.$val.$suffix.')';
+			} else if ($operator == 'WORDBEGIN') {
+				$wheres[] = '(('.$field.' LIKE '.$GLOBALS['db']->quote($val.'%').') OR ('.$field.' LIKE '.$GLOBALS['db']->quote('% '.$val.'%').'))';
 			} else if ((is_array($val) && !empty($val))) {
 				if ($operator == 'BETWEEN') {
 					$field_details = array_get($this->fields, $field);
@@ -905,6 +953,9 @@ class db_object
 			} else {
 				if (isset($this->fields[$raw_field]) && $this->fields[$raw_field]['type'] == 'text') {
 					$val = strtolower($val);
+				}
+				if ((is_array($val) && empty($val))) {
+					$val = '';
 				}
 				$wheres[] = '('.$prefix.$field.' '.$operator.' '.$db->quote($val).$suffix.')';
 			}
@@ -946,8 +997,8 @@ class db_object
 			$sql .= '
 					ORDER BY '.$query_bits['order_by'];
 		}
+
 		$res = $db->queryAll($sql, null, null, true, true); // 5th param forces array even if one col
-		check_db_result($res);
 		return $res;
 
 	}//end getInstances()

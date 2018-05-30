@@ -45,6 +45,18 @@ class Custom_Field extends db_object
 							'default'	=> 0,
 							'title'		=> 'Whether to allow multiple values to be entered for this field',
 						   ),
+			'show_add_family'=> Array(
+							'type'		=> 'select',
+							'options'  => Array('No', 'Yes'),
+							'default'	=> 0,
+							'title'		=> 'Whether to show this field on the add-family page',
+						   ),
+			'searchable'=> Array(
+							'type'		=> 'select',
+							'options'  => Array('No', 'Yes'),
+							'default'	=> 0,
+							'title'		=> 'Whether to include this field in system-wide search',
+						   ),
 			'heading_before'=> Array(
 							'type'		=> 'text',
 							'default'	=> '',
@@ -127,6 +139,8 @@ class Custom_Field extends db_object
 				break;
 			case 'allow_multiple':
 			case 'divider_before':
+			case 'show_add_family':
+			case 'searchable':
 				print_widget($prefix.$fieldname,
 						Array('type' => 'checkbox', 'attrs' => Array('title' => $this->fields[$fieldname]['title'])),
 						$this->values[$fieldname]);
@@ -168,7 +182,8 @@ class Custom_Field extends db_object
 	{
 		$res = parent::getInstancesQueryComps($params, $logic, $order);
 		$res['from'] .= ' LEFT JOIN custom_field_option cfo ON cfo.fieldid = custom_field.id';
-		$res['select'][] = 'GROUP_CONCAT(CONCAT(cfo.id, "__:__", cfo.value) ORDER BY cfo.rank SEPARATOR ";;;") as options';
+		$res['select'][] = 'GROUP_CONCAT(CONCAT(cfo.id, "__:__", cfo.value) ORDER BY cfo.rank ASC SEPARATOR ";;;") as options';
+		$res['select'][] = 'GROUP_CONCAT(CONCAT(cfo.id, "__:__", cfo.value) ORDER BY cfo.rank DESC SEPARATOR ";;;") as reverseoptions';
 		$res['select'][] = 'params';
 		$res['group_by'] = 'custom_field.id';
 		return $res;
@@ -186,17 +201,26 @@ class Custom_Field extends db_object
 	{
 		$res = parent::getInstancesData($params, $logic, $order);
 		foreach ($res as $k => $v) {
-			$opts = Array();
 			if ($v['type'] == 'select') {
+				$opts = Array();
+				$res[$k]['options'] = NULL;
 				$options = array_get($v, 'options', '');
 				if (strlen($options)) {
-					foreach (explode(';;;', $options) as $pair) {
-						list($id, $val) = explode('__:__', $pair);
-						$opts[$id] = $val;
+					$pairs =  explode(';;;', $options);
+					$revPairs = explode(';;;', $v['reverseoptions']);
+					if (reset($pairs) == end($revPairs)) {
+						foreach ($pairs as $pair) {
+							list($id, $val) = explode('__:__', $pair);
+							$opts[$id] = $val;
+						}
+						$res[$k]['options'] = $opts;
+					} else {
+						// Too many options, it was truncated
+						// That's OK, the options can get loaded on demand later
 					}
 				}
 			}
-			$res[$k]['options'] = $opts;
+			unset($res[$k]['reverseoptions']);
 			$res[$k]['params'] = unserialize($v['params']);
 		}
 		return $res;
@@ -308,6 +332,16 @@ class Custom_Field extends db_object
 				}
 				?>
 			</tbody>
+			<tfoot>
+				<tr>
+					<td colspan="2">
+						<label class="radio">
+							<?php
+							print_widget($prefix.'allow_other', Array('type' => 'checkbox'), array_get($params, 'allow_other', FALSE));
+							echo _('Allow "other"');
+							?>
+						</label>
+			</tfoot>
 		</table>
 		<?php
 	}
@@ -320,7 +354,10 @@ class Custom_Field extends db_object
 	public function processFieldInterface($fieldname, $prefix = '') {
 		switch ($fieldname) {
 			case 'allow_multiple':
-				$this->setValue('allow_multiple', !empty($_REQUEST[$prefix.$fieldname]));
+			case 'divider_before':
+			case 'show_add_family':
+			case 'searchable':
+				$this->setValue($fieldname, !empty($_REQUEST[$prefix.$fieldname]));
 				break;
 			case 'params':
 				$val = Array();
@@ -328,7 +365,6 @@ class Custom_Field extends db_object
 				$val['allow_blank_year'] = !empty($_REQUEST[$prefix.'allow_blank_year']);
 				$val['regex'] = array_get($_REQUEST, $prefix.'regex', '');
 				$val['template'] = array_get($_REQUEST, $prefix.'template', '');
-				$this->setValue($fieldname, $val);
 
 				// Also process the options for select fields:
 				if (!empty($_REQUEST[$prefix.'option_ids'])) {
@@ -357,7 +393,11 @@ class Custom_Field extends db_object
 					$this->_tmp['new_options'] = $newOptions;
 					$this->_tmp['update_options'] = $updateOptions;
 					$this->_tmp['delete_options'] = $deleteOptions;
+
+					$val['allow_other'] = array_get($_REQUEST, $prefix.'allow_other', FALSE);
+
 				}
+				$this->setValue($fieldname, $val);
 
 				break;
 			default:
@@ -385,6 +425,9 @@ class Custom_Field extends db_object
 	public function save()
 	{
 		$GLOBALS['system']->doTransaction('BEGIN');
+		if ($this->getValue('type') !== 'text') {
+			$this->setValue('searchable', 0);
+		}
 		parent::save();
 		$this->_saveOptions();
 		$GLOBALS['system']->doTransaction('COMMIT');
@@ -438,6 +481,9 @@ class Custom_Field extends db_object
 			foreach ($options as $id => $detail) {
 				$params['options'][$id] = $detail['value'];
 			}
+			if (!empty($this->values['params']['allow_other'])) {
+				$params['options']['other'] = _('Other');
+			}
 		}
 		if (!empty($this->values['params']['allow_blank_year'])) $params['allow_blank_year'] = $this->values['params']['allow_blank_year'];
 		if (!empty($this->values['params']['regex'])) $params['regex'] = $this->values['params']['regex'];
@@ -449,12 +495,23 @@ class Custom_Field extends db_object
 	 * @param mixed $value	Existing value
 	 * @param array $extraPrams	Any extra params to pass to print_widget.
 	 */
-	public function printWidget($value, $extraParams=Array())
+	public function printWidget($value, $extraParams=Array(), $prefix='')
 	{
-		print_widget('custom_'.$this->id.'[]', $extraParams+$this->getWidgetParams(), $value);
+		$widgetParams = $this->getWidgetParams();
+		$otherValue = '';
+		if (($this->getValue('type') == 'select') && strlen($value) && !empty($this->values['params']['allow_other'])) {
+			if (!isset($widgetParams['options'][$value])) {
+				$otherValue = $value;
+				$value = 'other';
+			}
+		}
+		print_widget($prefix.'custom_'.$this->id.'[]', $extraParams+$widgetParams, $value);
 		if (($this->getValue('type') == 'date') && !empty($this->values['params']['allow_note'])) {
 			$note = substr($value, 11);
-			print_widget('custom_'.$this->id.'_note[]', Array('type' => 'text', 'placeholder' => '(Note)'), $note);
+			print_widget($prefix.'custom_'.$this->id.'_note[]', Array('type' => 'text', 'placeholder' => '(Note)'), $note);
+		}
+		if (($this->getValue('type') == 'select') && !empty($this->values['params']['allow_other'])) {
+			print_widget($prefix.'custom_'.$this->id.'_other[]', Array('type' => 'text', 'class' => 'select-other'), $otherValue);
 		}
 		if (strlen($this->values['tooltip'])) {
 			?>
@@ -468,13 +525,22 @@ class Custom_Field extends db_object
 	 * Process an interface where an end user supplies a value for this custom field for a person record
 	 * @return mixed
 	 */
-	public function processWidget()
+	public function processWidget($prefix='')
 	{
-		$res = process_widget('custom_'.$this->id, $this->getWidgetParams(), NULL, TRUE);
+		$res = process_widget($prefix.'custom_'.$this->id, $this->getWidgetParams(), NULL, TRUE);
 		if (($this->getValue('type') == 'date') && !empty($this->values['params']['allow_note'])) {
-			$notes = process_widget('custom_'.$this->id.'_note', Array('type' => 'text'), NULL, TRUE);
+			$notes = process_widget($prefix.'custom_'.$this->id.'_note', Array('type' => 'text'), NULL, TRUE);
 			foreach ((array)$notes as $k => $v) {
 				if (!empty($res[$k]) && strlen($v)) $res[$k] .= ' '.$v;
+			}
+		}
+		if (($this->getValue('type') == 'select') && !empty($this->values['params']['allow_other'])) {
+			if (!empty($res)) {
+				foreach ($res as $k => $v) {
+					if ($v == 'other') {
+						$res[$k] = '0 '.$_REQUEST[$prefix.'custom_'.$this->id.'_other'][$k];
+					}
+				}
 			}
 		}
 		if (is_array($res)) $res = array_remove_empties($res);
@@ -503,7 +569,10 @@ class Custom_Field extends db_object
 				break;
 			case 'select':
 				if (empty($val)) return '';
-				return array_get($this->getOptions(), $val, '(Invalid option)');
+				if (!empty($this->values['params']['allow_other'])) {
+					if (0 === strpos($val, '0 ')) $val = substr($val, 2);
+				}
+				return array_get($this->getOptions(), $val, $val);
 				break;
 			case 'link':
 				$template = array_get($this->values['params'], 'template', '');
@@ -556,6 +625,9 @@ class Custom_Field extends db_object
 					if (strtolower($label) == $lowerVal) {
 						return $id;
 					}
+				}
+				if (!empty($this->values['params']['allow_other'])) {
+					return '0 '.$val;
 				}
 				trigger_error("Invalid option '$val'. ".$this->getValue('name')." must be {".implode(',', $this->getOptions())."})");
 				return NULL;

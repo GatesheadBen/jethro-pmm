@@ -10,6 +10,19 @@ $(document).ready(function() {
 
 	if ($('.stop-js').length) return; /* Classname flag for big pages that don't want JS to run */
 
+	// open mailto links in a new window (eg for gmail), but close the new window if it's unused (eg outlook desktop)
+	$('a[href^="mailto:"]').click(function() {
+		var windowRef = window.open(this.href, '_email');
+
+		windowRef.focus();
+
+		setTimeout(function(){
+		  if(!windowRef.document.hasFocus()) {
+			  windowRef.close();
+		  }
+		}, 500);
+		return false;
+	})
 
 	var i = document.createElement('input');
 	if (!('autofocus' in i) || $('[autofocus]').length == 0) {
@@ -360,7 +373,7 @@ $(document).ready(function() {
 		}
 	});
 
-	$('a[data-method=post]').click(function(event) {
+	$('a[data-method=post]').each(function() {
 		var p = $(this).attr('href').split('?');
 		var action = p[0];
 		var params = p[1].split('&');
@@ -368,13 +381,16 @@ $(document).ready(function() {
 		$('body').append(pform);
 		pform.attr('action', action);
 		pform.attr('method', 'post');
-		for (var i=0; i < params.length; i++) {
-			var tmp= (""+params[i]).split('=');
+		pform.css('display', 'none');
+		for (var i = 0; i < params.length; i++) {
+			var tmp = ("" + params[i]).split('=');
 			var key = tmp[0], value = tmp[1];
-			pform.append('<input type="hidden" name="'+key+'" value="'+value+'" />');
+			pform.append('<input type="hidden" name="' + key + '" value="' + value + '" />');
 		}
-		pform.submit();
-		return false;
+		if (!window.postFormID) window.postFormID = 0;
+		pform.attr('id', 'postform'+(window.postFormID++));
+		$(document.body).append(pform);
+		this.href="javascript:document.getElementById('"+pform.attr('id')+"').submit()";
 	});
 
 	TBLib.anchorBottom('.anchor-bottom');
@@ -433,7 +449,7 @@ TBLib.handleRegexInputBlur = function()
 TBLib.invalidBibleBox = null;
 TBLib.handleBibleRefBlur = function()
 {
-	var re=/^(genesis|gen|genes|exodus|exod|ex|leviticus|levit|lev|numbers|nums|num|deuteronomy|deut|joshua|josh|judges|judg|ruth|1samuel|1sam|1sam|2samuel|2sam|2sam|1kings|1ki|1ki|2kings|2ki|2ki|1chronicles|1chron|1chr|1chron|1chr|2chronicles|2chron|2chr|2chr|2chron|ezra|nehemiah|nehem|neh|esther|esth|est|job|psalms|psalm|pss|ps|proverbs|prov|pr|ecclesiastes|eccles|eccl|ecc|songofsolomon|songofsongs|songofsong|sos|songofsol|isaiah|isa|jeremiah|jerem|jer|lamentations|lam|ezekiel|ezek|daniel|dan|hosea|hos|joel|jl|jo|amos|am|obadiah|obd|ob|jonah|jon|micah|mic|nahum|nah|habakkuk|hab|zephaniah|zeph|haggai|hag|zechariah|zech|zec|malachi|mal|matthew|mathew|matt|mat|mark|mk|luke|lk|john|jn|actsoftheapostles|acts|ac|romans|rom|1corinthians|1cor|1cor|2corinthians|2cor|2cor|galatians|gal|ephesians|eph|philippians|phil|colossians|col|1thessalonians|1thess|1thes|1thes|2thessalonians|2thess|2thes|2thes|1timothy|1tim|1tim|2timothy|2tim|2tim|titus|tit|ti|philemon|hebrews|heb|james|jam|1peter|1pet|1pet|2peter|2pet|2pet|1john|1jn|1jn|2john|2jn|2jn|3john|3jn|3jn|jude|revelation|rev)(([0-9]+)([\-\:.])){0,1}(([0-9]+)([\-\:.])){0,1}(([0-9]+)([\-\:.])){0,1}([0-9]+)$/gi;
+	var re=/^(genesis|gen|genes|exodus|exod|ex|leviticus|levit|lev|numbers|nums|num|deuteronomy|deut|joshua|josh|judges|judg|ruth|1samuel|1sam|1sam|2samuel|2sam|2sam|1kings|1ki|1ki|2kings|2ki|2ki|1chronicles|1chron|1chr|1chron|1chr|2chronicles|2chron|2chr|2chr|2chron|ezra|nehemiah|nehem|neh|esther|esth|est|job|psalms|psalm|pss|ps|proverbs|prov|pr|ecclesiastes|eccles|eccl|ecc|sg|song|songs|sng|songofsolomon|songofsongs|songofsong|sos|songofsol|isaiah|isa|jeremiah|jerem|jer|lamentations|lam|ezekiel|ezek|daniel|dan|hosea|hos|joel|jl|jo|amos|am|obadiah|obd|ob|jonah|jon|micah|mic|nahum|nah|habakkuk|hab|zephaniah|zeph|haggai|hag|zechariah|zech|zec|malachi|mal|matthew|mathew|matt|mat|mark|mk|luke|lk|john|jn|actsoftheapostles|acts|ac|romans|rom|1corinthians|1cor|1cor|2corinthians|2cor|2cor|galatians|gal|ephesians|eph|philippians|phil|colossians|col|1thessalonians|1thess|1thes|1thes|2thessalonians|2thess|2thes|2thes|1timothy|1tim|1tim|2timothy|2tim|2tim|titus|tit|ti|philemon|hebrews|heb|james|jam|1peter|1pet|1pet|2peter|2pet|2pet|1john|1jn|1jn|2john|2jn|2jn|3john|3jn|3jn|jude|revelation|rev)(([0-9]+)([\-\:.])){0,1}(([0-9]+)([\-\:.])){0,1}(([0-9]+)([\-\:.])){0,1}([0-9]+)$/gi;
 	this.value = this.value.trim();
 	if (this.value == '') return true;
 	if (!this.value.replace(/ /g, '').match(re)) {
@@ -520,6 +536,7 @@ TBLib.expandTable = function(table)
 	var originalRow = rows[index];
 	var newRow = $(originalRow).clone(true,true);
 	var newRowInputs = newRow.find('input, textarea, select');
+	var incrementNames = !$(table).hasClass('no-name-increment');
 	newRowInputs.each(function() {
 		if (!this.name) return;
 		// clear fields in the new row, except those inside a 'preserve-value' container
@@ -536,7 +553,9 @@ TBLib.expandTable = function(table)
 			}
 		}
 		if ($(this).hasClass('bubble-option-classes')) this.change();
-		this.name = this.name.replace('_'+index+'_', '_'+rows.length+'_');
+		if (incrementNames) {
+			this.name = this.name.replace('_'+index+'_', '_'+rows.length+'_');
+		}
 		if (this.name == 'index[]') this.value = rows.length; // so that after re-ordering, the order can be detected server-side
 		if (((this.type == 'radio') || (this.type == 'checkbox')) && (this.value == index)) this.value = rows.length;
 	});

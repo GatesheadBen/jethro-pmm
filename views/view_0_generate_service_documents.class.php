@@ -21,13 +21,13 @@ class View__Generate_Service_Documents extends View
 
 	static function getTemplates($op)
 	{
-		$dirs['populate'] = SERVICE_DOCS_TO_POPULATE_DIRS ? explode('|', SERVICE_DOCS_TO_POPULATE_DIRS) : '';
-		$dirs['expand'] = SERVICE_DOCS_TO_EXPAND_DIRS ? explode('|', SERVICE_DOCS_TO_EXPAND_DIRS) : '';
+		$dirs['populate'] = explode('|', ifdef('SERVICE_DOCS_TO_POPULATE_DIRS', 'Templates/To_Populate'));
+		$dirs['expand'] = explode('|', ifdef('SERVICE_DOCS_TO_EXPAND_DIRS', 'Templates/To_Expand'));
 		$opDirs = $dirs[$op];
 		$found_files = Array();
 
 
-		$rootpath = DOCUMENTS_ROOT_PATH ? DOCUMENTS_ROOT_PATH :  JETHRO_ROOT.'/files';
+		$rootpath = Documents_Manager::getRootPath();
 		foreach ($opDirs as $i => $dir) {
 			if (!is_dir($dir)) {
 				if (is_dir($rootpath.'/'.$dir)) {
@@ -158,7 +158,8 @@ class View__Generate_Service_Documents extends View
 				echo '</a></li>';
 			}
 			echo '</ul>';
-			$zipname = reset(explode('.', basename($this->_filename))).'_'.$this->_service_date;
+			$fn_bits = explode('.', basename($this->_filename));
+			$zipname = reset($fn_bits).'_'.$this->_service_date;
 			$allHref = BASE_URL.'?call=documents&zipname='.$zipname;
 			foreach ($this->_generated_files as $path => $label) {
 				$allHref .= '&zipfile[]='.self::_cleanDirName($path);
@@ -370,7 +371,7 @@ class View__Generate_Service_Documents extends View
 
 	private static function _cleanDirName($dirname) {
 		$dirname = str_replace('\\', '/', $dirname);
-		$rootpath = DOCUMENTS_ROOT_PATH ? DOCUMENTS_ROOT_PATH :  JETHRO_ROOT.'/files';
+		$rootpath = Documents_Manager::getRootPath();
 		$rootpath = str_replace('\\', '/', $rootpath);
 		if (0 === strpos($dirname, $rootpath)) {
 			return substr($dirname, strlen($rootpath));

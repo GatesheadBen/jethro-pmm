@@ -31,9 +31,9 @@ Class SMS_Sender
 		switch ($smstype) {
 			case 'family':
 				$families = Family::getFamilyDataByMemberIDs($personids);
-				$recips = $GLOBALS['system']->getDBObjectData('person', Array('age_bracket' => '0', '(familyid' => array_keys($families), '!mobile_tel' => '', '!status' => 'archived'), 'AND');
-				$blanks = $GLOBALS['system']->getDBObjectData('person', Array('age_bracket' => '0', '(familyid' => array_keys($families), 'mobile_tel' => '', '!status' => 'archived'), 'AND');
-				$archived = $GLOBALS['system']->getDBObjectData('person', Array('age_bracket' => '0', '(familyid' => array_keys($families), 'status' => 'archived'), 'AND');
+				$recips = $GLOBALS['system']->getDBObjectData('person', Array('(age_bracketid' => Age_Bracket::getAdults(), '(familyid' => array_keys($families), '!mobile_tel' => '', '!status' => 'archived'), 'AND');
+				$blanks = $GLOBALS['system']->getDBObjectData('person', Array('(age_bracketid' => Age_Bracket::getAdults(), '(familyid' => array_keys($families), 'mobile_tel' => '', '!status' => 'archived'), 'AND');
+				$archived = $GLOBALS['system']->getDBObjectData('person', Array('(age_bracketid' => Age_Bracket::getAdults(), '(familyid' => array_keys($families), 'status' => 'archived'), 'AND');
 				break;
 			case 'person':
 			default:
@@ -43,6 +43,67 @@ Class SMS_Sender
 				$GLOBALS['system']->includeDBClass('person');
 		}
 		return Array($recips, $blanks, $archived);
+	}
+	
+	/**
+	 * Remove invalid characters from message.
+	 * Only understands GSM0338 at the moment - any other charset does not get filtered.
+	 * @see SMS_ENCODING setting/constant.  Defaults to GSM0338.
+	 * @param string $message
+	 * @return string
+	 */
+	private static function cleanseMessage($message)
+	{
+		$encoding = strtoupper(ifdef('SMS_ENCODING', 'GSM0338'));
+		switch ($encoding) {
+			case 'GSM0338':
+				$gsm0338 = array(
+					'@','Δ',' ','0','¡','P','¿','p',
+					'£','_','!','1','A','Q','a','q',
+					'$','Φ','"','2','B','R','b','r',
+					'¥','Γ','#','3','C','S','c','s',
+					'è','Λ','¤','4','D','T','d','t',
+					'é','Ω','%','5','E','U','e','u',
+					'ù','Π','&','6','F','V','f','v',
+					'ì','Ψ','\'','7','G','W','g','w',
+					'ò','Σ','(','8','H','X','h','x',
+					'Ç','Θ',')','9','I','Y','i','y',
+					"\n",'Ξ','*',':','J','Z','j','z',
+					'Ø',"\x1B",'+',';','K','Ä','k','ä',
+					'ø','Æ',',','<','L','Ö','l','ö',
+					"\r",'æ','-','=','M','Ñ','m','ñ',
+					'Å','ß','.','>','N','Ü','n','ü',
+					'å','É','/','?','O','§','o','à'
+				 );
+				if (function_exists('mb_strlen')) {
+					$len = mb_strlen($message, 'UTF-8');
+					$out = '';
+					for ($i=0; $i < $len; $i++) {
+						$char = mb_substr($message,$i,1,'UTF-8');
+						if (in_array($char, $gsm0338)) {
+							$out .= $char;
+						} else {
+							error_log('SMS sender Discarded invalid char "'.$char.'" (ord '.ord($char).')');
+						}
+					}
+					return $out;
+				} else {
+					$len = strlen($message);
+					$out = '';
+					for ($i=0; $i < $len; $i++) {
+						$char = substr($message,$i,1);
+						if (in_array($char, $gsm0338)) {
+							$out .= $char;
+						} else {
+							error_log('SMS sender Discarded invalid char "'.$char.'" (ord '.ord($char).')');
+						}
+					}
+					return $out;
+
+				}
+		}
+		return $message;
+
 	}
 
 	/**
@@ -54,6 +115,7 @@ Class SMS_Sender
 	 */
 	public static function sendMessage($message, $recips, $saveAsNote=FALSE)
 	{
+		$message = self::cleanseMessage($message);
 		$mobile_tels = Array();
 		if (!empty($recips)) {
 			foreach ($recips as $recip) {
@@ -108,21 +170,22 @@ Class SMS_Sender
 			$fp = fopen(SMS_HTTP_URL, 'r', false, stream_context_create($opts));
 			if (!$fp) {
 				$http_error = "ERROR: Unable to connect to SMS Server.<br>" . join("<br>", $http_response_header);
-				return array("success" => false, "successes" => array(), "failures" => array(), "rawresponse" => $http_error);
+				return array("success" => false, "successes" => array(), "failures" => array(), "rawresponse" => $http_error, "error" => $http_error);
 			} else {
 				$response = stream_get_contents($fp);
 				fclose($fp);
 			}
 		} catch (Exception $e) {
 			$error = "ERROR: Unable to connect to SMS Server. " + $e->getMessage();
-			return array("success" => false, "successes" => array(), "failures" => array(), "rawresponse" => $error);
+			return array("success" => false, "successes" => array(), "failures" => array(), "rawresponse" => $error, "error" => $error);
 		}
 		restore_error_handler(); // Restore system error_handler
 		$success = !empty($response);
+		$error = null;
 		if (ifdef('SMS_HTTP_RESPONSE_ERROR_REGEX')) {
-			if (preg_match(SMS_HTTP_RESPONSE_ERROR_REGEX, $rawresponse)) {
+			if (preg_match("/" . SMS_HTTP_RESPONSE_ERROR_REGEX . "/", $response)) {
 				$success = FALSE;
-				$ajax['error'] = $rawresponse;
+				$error = "$response";
 			}
 		}
 		$successes = $failures = Array();
@@ -152,6 +215,7 @@ Class SMS_Sender
 			"successes" => $successes,
 			"failures" => $failures,
 			"rawresponse" => $response,
+			"error" => $error
 		);
 	}
 

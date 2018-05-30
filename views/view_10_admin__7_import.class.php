@@ -45,6 +45,8 @@ class View_Admin__Import extends View
 	{
 		if (in_array($errno, array(E_USER_NOTICE, E_USER_WARNING, E_NOTICE, E_WARNING))) {
 			$this->_captured_errors[] = $errstr;
+		} else {
+			$GLOBALS['system']->_handleError($errno, $errstr, $errfile, $errline);
 		}
 	}
 
@@ -153,6 +155,9 @@ class View_Admin__Import extends View
 			}
 			
 			$map = fgetcsv($fp, 0, ",", '"');
+			foreach ($map as $k => $v) {
+				$map[$k] = strtolower(str_replace(' ', '_', $v));
+			}
 			$_SESSION['import']['groupid'] = (int)$_POST['groupid'];
 			$_SESSION['import']['families'] = Array();
 			$_SESSION['import']['total_families'] = 0;
@@ -296,7 +301,7 @@ class View_Admin__Import extends View
 								);
 						?>
 				</b><br />
-				<?php printf(ents(_('The new persons will be added to the %s group.')), $groupname);	?>
+				<?php ents(printf(_('The new persons will be added to the %s group.'), $groupname));	?>
 				</p>
 
 				<?php

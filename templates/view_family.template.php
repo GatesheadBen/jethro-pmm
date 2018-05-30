@@ -120,7 +120,7 @@ printf($panel_header, 'basic', 'Basic Details & Members', 'active');
 						<strong><?php echo ents($dummy->toString()); ?></strong>
 						<br />
 						<?php
-						echo ents($dummy->getFormattedValue('age_bracket'));
+						echo ents($dummy->getFormattedValue('age_bracketid'));
 						echo ' &bull; ';
 						echo ents($dummy->getFormattedValue('gender'));
 						echo '<br />';
@@ -150,7 +150,7 @@ printf($panel_header, 'basic', 'Basic Details & Members', 'active');
 	</div>
 
 	<?php
-	if (!$accordion && $GLOBALS['system']->featureEnabled('PHOTOS')) {
+	if ($GLOBALS['system']->featureEnabled('PHOTOS')) {
 		?>
 		<img class="person-photo" width="<?php echo Photo_Handler::MAX_PHOTO_WIDTH; ?>" src="?call=photo&familyid=<?php echo (int)$family->id; ?>" />
 		<?php

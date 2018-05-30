@@ -27,14 +27,33 @@ class Person_Group extends db_object
 									'label' => 'Status',
 									'default'	=> 0,
 								),
+			'owner'			=> Array(
+									'type'			=> 'reference',
+									'references'	=> 'staff_member',
+									'label'			=> 'Visibility',
+									'allow_empty'   => TRUE,
+									'default'      => NULL,
+								   ),
+			'show_add_family'	=> Array(
+									'type' => 'select',
+									'options' => Array(
+													'yes' => 'Yes',
+													'no' => 'No',
+												),
+									'default' => 'no',
+									'label' => 'Show on add-family page?',
+									'note' => 'Should this group be shown as an option when <a href="?view=families__add">adding a new family</a>?',
+									'divider_before' => true,
+									),
 			'share_member_details' => Array(
 									'type' => 'select',
 									'options' => Array('No', 'Yes'),
-									'note' => 'If set to yes, members of this group will be able to see other members\' details when they log in to the <a href="'.BASE_URL.'members">member portal</a>'
+									'note' => 'Should members of this group be able to see each others\'s details in <a href="'.BASE_URL.'members">member portal</a>?',
+									'label' => 'Share member details?',
 								),
 		);
 		// Check if attendance is enabled
-		$enabled = explode(',', ENABLED_FEATURES);
+		$enabled = explode(',', ifdef('ENABLED_FEATURES', 'ATTENDANCE'));
 		if(in_array('ATTENDANCE', $enabled)){
 			 $fields['attendance_recording_days']	= Array(
 									'type'		=> 'bitmask',
@@ -49,8 +68,8 @@ class Person_Group extends db_object
 									),
 									'default'	=> 0,
 									'label'		=> 'Attendance Recording Days',
-									'cols'		=> 2,
-									'note'		=> 'Select nothing if you do not plan to record attendance for this group',
+									'cols'		=> 4,
+									'note'		=> 'If you want to record attendance at this group, select the applicable weekdays. ',
 									'show_unselected' => FALSE,
 						   );
 		}
@@ -63,7 +82,7 @@ class Person_Group extends db_object
 		if (!$this->id) {
 			$this->fields['is_archived']['editable'] = false;
 		}
-	
+
 		if (!empty($_REQUEST['categoryid'])) {
 			$_SESSION['group_categoryid'] = $_REQUEST['categoryid'];
 		} else if (empty($this->id) && !empty($_SESSION['group_categoryid'])) {
@@ -96,7 +115,11 @@ class Person_Group extends db_object
 				  PRIMARY KEY  (`personid`,`groupid`),
 				  INDEX personid (personid),
 				  INDEX groupid (groupid),
+<<<<<<< HEAD
 				  CONSTRAINT `membership_status_fk` FOREIGN KEY (membership_status) REFERENCES person_group_membership_status (id)
+=======
+				  CONSTRAINT `membership_status_fk` FOREIGN KEY (membership_status) REFERENCES person_group_membership_status (id) ON DELETE RESTRICT
+>>>>>>> upstream/master
 				) ENGINE=InnoDB",
 		);
 	}
@@ -157,7 +180,6 @@ class Person_Group extends db_object
 				$sql .= ' ON DUPLICATE KEY UPDATE membership_status=VALUES(membership_status)';
 			}
 			$res = $db->query($sql);
-			check_db_result($res);
 			return TRUE;
 		}
 		return FALSE;
@@ -176,7 +198,6 @@ class Person_Group extends db_object
 					WHERE groupid = '.$db->quote((int)$this->id).'
 						AND personid = '.$db->quote((int)$personid);
 			$res = $db->query($sql);
-			check_db_result($res);
 			return TRUE;
 		}
 		return FALSE;
@@ -192,11 +213,10 @@ class Person_Group extends db_object
 		$members = $GLOBALS['system']->getDBObjectData('person', Array('id' => $personids));
 		if ($members) {
 			$db =& $GLOBALS['db'];
-			$SQL = 'DELETE FROM person_group_membership 
+			$SQL = 'DELETE FROM person_group_membership
 					WHERE groupid = '.$db->quote((int)$this->id).'
 						AND personid IN ('.implode(',', array_map(Array($db, 'quote'), array_keys($members))).')';
 			$res = $db->query($SQL);
-			check_db_result($res);
 			return TRUE;
 		}
 		return FALSE;
@@ -207,15 +227,14 @@ class Person_Group extends db_object
 	{
 		$db =& $GLOBALS['db'];
 		$sql = 'SELECT g.id, g.name, gm.created, g.is_archived, g.categoryid, pgms.label as membership_status
-				FROM person_group_membership gm 
+				FROM person_group_membership gm
 				JOIN person_group g ON gm.groupid = g.id
 				LEFT JOIN person_group_membership_status pgms ON pgms.id = gm.membership_status
 				WHERE gm.personid = '.$db->quote((int)$personid).'
 				'.($includeArchived ? '' : ' AND NOT g.is_archived').'
-				'.(is_null($whichShareMemberDetails) ? '' : ' AND g.share_member_details = '.(int)$whichShareMemberDetails).' 
+				'.(is_null($whichShareMemberDetails) ? '' : ' AND g.share_member_details = '.(int)$whichShareMemberDetails).'
 				ORDER BY g.name';
 		$res = $db->queryAll($sql, null, null, true);
-		check_db_result($res);
 		return $res;
 	}
 
@@ -245,13 +264,13 @@ class Person_Group extends db_object
 		<?php
 	}
 
-		
+
 	function getInstancesQueryComps($params, $logic, $order)
 	{
 		$res = parent::getInstancesQueryComps($params, $logic, $order);
 		$res['from'] .= "\n LEFT JOIN person_group_membership gm ON gm.groupid = person_group.id ";
 		$res['from'] .= "\n LEFT JOIN person_group_category pgc ON person_group.categoryid = pgc.id ";
-		
+
 		$res['select'][] = 'COUNT(gm.personid) as member_count';
 		$res['select'][] = 'pgc.name as category';
 		$res['group_by'] = 'person_group.id';
@@ -263,18 +282,15 @@ class Person_Group extends db_object
 	{
 		$SQL = 'SELECT COUNT(*) FROM account_group_restriction WHERE groupid = '.(int)$this->id;
 		$res = $GLOBALS['db']->queryOne($SQL);
-		check_db_result($res);
 		if ($res > 0) {
 			add_message("This group cannot be deleted because it is used to restrict one or more user accounts", 'error');
 			return FALSE;
 		}
-		
+
 		$r = parent::delete();
 		$db =& $GLOBALS['db'];
 		$sql = 'DELETE FROM person_group_membership WHERE groupid = '.$db->quote($this->id);
 		$res = $db->query($sql);
-		check_db_result($res);
-		
 		return $r;
 	}
 
@@ -284,14 +300,17 @@ class Person_Group extends db_object
 		switch ($fieldname) {
 			case 'attendance_recording_days':
 				if ($value == 0) {
-					echo 'No';
+					echo _('No');
 					return;
 				}
 				if ($value == 127) {
-					echo 'Yes, any day';
+					echo _('Yes, any day');
 					return;
 				}
 				return parent::printFieldValue($fieldname, $value);
+				break;
+			case 'owner':
+				echo _(($value === NULL) ? 'Everyone' : 'Only me');
 				break;
 				
 			case 'categoryid':
@@ -307,30 +326,60 @@ class Person_Group extends db_object
 
 	function printFieldInterface($fieldname, $prefix='')
 	{
-		if ($fieldname == 'categoryid') {
-			$GLOBALS['system']->includeDBClass('person_group_category');
-			Person_Group_Category::printChooser($prefix.$fieldname, $this->getValue('categoryid'));
-			echo ' &nbsp; &nbsp;<small><a href="'.build_url(Array('view' => 'groups__manage_categories')).'">Manage categories</a></small>';
-		} else {
-			return parent::printFieldInterface($fieldname, $prefix);
+		switch ($fieldname) {
+			case 'categoryid':
+				$GLOBALS['system']->includeDBClass('person_group_category');
+				Person_Group_Category::printChooser($prefix.$fieldname, $this->getValue('categoryid'));
+				echo ' &nbsp; &nbsp;<small><a href="'.build_url(Array('view' => 'groups__manage_categories')).'">Manage categories</a></small>';
+				break;
+			case 'owner':
+				$visibilityParams = Array(
+					'type' => 'select',
+					'options' => Array('Visible to everyone', 'Visible only to me')
+				);
+				print_widget('is_private', $visibilityParams, $this->getValue('owner') !== NULL);
+				break;
+			default:
+				return parent::printFieldInterface($fieldname, $prefix);
 		}
 	}
 
-	public static function getMembershipStatusOptionsAndDefault()
+	public function processFieldInterface($name, $prefix='')
 	{
-		$sql = 'SELECT * FROM person_group_membership_status ORDER BY rank';
+		switch ($name) {
+			case 'owner':
+				$this->setValue('owner', empty($_REQUEST['is_private']) ? NULL : $GLOBALS['user_system']->getCurrentUser('id'));
+				break;
+			default:
+				return parent::processFieldInterface($name, $prefix);
+		}
+	}
+
+	public static function getMembershipStatusOptionsAndDefault($with_usages = FALSE)
+	{
+		if ($with_usages) {
+			$sql = 'SELECT s.*, COUNT(pgm.personid) as usages
+					FROM person_group_membership_status s
+					LEFT JOIN person_group_membership pgm ON pgm.membership_status = s.id
+					ORDER BY s.rank';
+		} else {
+			$sql = 'SELECT s.*
+					FROM person_group_membership_status s
+					ORDER BY s.rank';
+		}
 		$res = $GLOBALS['db']->queryAll($sql, null, null, true);
-		check_db_result($res);
 		$options = Array();
 		$default = null;
+		$usages = Array();
 		foreach ($res as $id => $detail) {
 			$options[$id] = $detail['label'];
+			if ($with_usages) $usages[$id] = $detail['usages'];
 			if ($detail['is_default']) $default = $id;
 		}
 		if (empty($default)) $default = key($options);
-		return Array($options, $default);
+		return Array($options, $default, $usages);
 	}
-		
+
 
 	public static function printMembershipStatusChooser($name, $value=NULL, $multi=FALSE)
 	{
@@ -362,7 +411,6 @@ class Person_Group extends db_object
 										SET membership_status = '.$GLOBALS['db']->quote($status).'
 										WHERE groupid = '.(int)$this->id.'
 											AND personid = '.(int)$personid);
-			check_db_result($res);
 		}
 		$GLOBALS['system']->doTransaction('COMMIT');
 		return TRUE;
@@ -412,7 +460,7 @@ class Person_Group extends db_object
 				$sel = ($value === 'c0') ? ' selected="selected"' : '';
 				?>
 				<option value="c0" class="strong"<?php echo $sel; ?>>Uncategorised Groups (ALL)</option>
-				<?php 
+				<?php
 				self::_printChooserGroupOptions($groups, 0, $value);
 			} else {
 				?>
@@ -428,7 +476,7 @@ class Person_Group extends db_object
 		return TRUE;
 	}
 
-	function _printChooserOptions($cats, $groups, $value, $allow_category_select=FALSE, $parentcatid=0, $prefix='')
+	private static function _printChooserOptions($cats, $groups, $value, $allow_category_select=FALSE, $parentcatid=0, $prefix='')
 	{
 		foreach ($cats as $cid => $cat) {
 			if ($cat['parent_category'] != $parentcatid) continue;
@@ -452,7 +500,7 @@ class Person_Group extends db_object
 		}
 	}
 
-	function _printChooserGroupOptions($groups, $catid, $value, $prefix='')
+	private static function _printChooserGroupOptions($groups, $catid, $value, $prefix='')
 	{
 		foreach ($groups as $gid => $group) {
 			if ($group['categoryid'] != $catid) continue;
@@ -462,12 +510,12 @@ class Person_Group extends db_object
 			<?php
 		}
 	}
-	
+
 	public function canRecordAttendanceOn($date)
 	{
 		$testIndex = array_search(date('l', strtotime($date)), $this->fields['attendance_recording_days']['options']);
 		return $testIndex & $this->getValue('attendance_recording_days');
-		
+
 	}
 
 

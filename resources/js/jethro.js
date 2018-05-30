@@ -401,7 +401,16 @@ $(document).ready(function() {
 			revert: 100,
 			opacity: 1,
 			axis: 'y',
-		})
+		});
+
+	$('input.select-other').prevAll('select').change(function() {
+		var otherBox = $(this).nextAll('input.select-other');
+		if (this.value == 'other') {
+			otherBox.show().focus();
+		} else {
+			otherBox.val('').hide();
+		}
+	}).change();
 
 	if (document.getElementById('custom-fields-editor')) {
 		$("#custom-fields-editor>tbody").sortable(	{
@@ -524,7 +533,7 @@ JethroSMS.init = function() {
 			data: smsData,
 			context: $(this),
 			error: function(jqXHR, status, error) {
-				alert('Server error sending SMS: ' + error);
+				alert('AJAX error sending SMS: ' + error);
 			},
 			success: function(data) {
 				var smsRequestCount = $("input[name='personid[]']:checked").length;
@@ -572,11 +581,13 @@ JethroSMS.init = function() {
 				context: $(this),
 				error: function(jqXHR, status, error) {
 					alert('Server error while sending SMS');
+					console.log(jqXHR);
+					console.log(status);
+					console.log(error);
 					sendButton.html("Send");
 				},
 				success: function(data) {
 					var modalDiv = $("#send-sms-modal");
-
 					var showResults = JethroSMS.onAJAXSuccess(data, resultsDiv);
 					if (showResults) {
 						resultsDiv.show();
@@ -621,7 +632,7 @@ JethroSMS.onAJAXSuccess = function (data, resultsDiv) {
 	resultsDiv.html(""); // Reset results in case there's something there
 	var message = '';
 	if (data.error!==undefined) {
-		alert('Server error sending SMS: '+data.error);
+		alert('Server error sending SMS\n'+data.error);
 		return true;
 	}
 	if (sentCount > 0) {
@@ -1088,6 +1099,14 @@ JethroServicePlanner.refreshNumbersAndTimes = function() {
 			$(this).find('td.number').html(currentNumber++);
 		}
 	});
+	// Adjust the spacer so the min height is 5 items equivalent
+	var spacer = $('#service-plan-spacer');
+	spacer.remove();
+	$('#service-plan tbody').append(spacer); // make sure it's at the end
+	var spacerHeight = Math.max(0, (5 - $('tr.service-item').length)*30);
+	$('#service-plan-spacer td').height(spacerHeight);
+
+
 }
 
 
@@ -1221,15 +1240,13 @@ function handleFamilyPhotosLayout() {
 }
 
 var applyNarrowColumns = function(root) {
-	//return;
-
 	// All of this is because in Chrome, if you set a width on a TD,
 	// there is no way to stop the overall table from being width 100% OF THE WINDOW
 	// (even if its parent is less than 100% width).
 	// We want the whole table to be as wide as it needs to be but no wider.
 	var expr = 'td.narrow, th.narrow, table.object-summary th'
-	var cells = $(root).find(expr).not('table.table-full-width *');
-	var parents = cells.parents('table:visible');
+	var cells = $(root).find(expr); 
+	var parents = cells.parents('table:visible').not('.no-narrow-magic');
 	parents.each(function() {
 		var table = $(this);
 		table.css('width', table.width()+'px');

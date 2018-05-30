@@ -4,7 +4,7 @@ Class Photo_Handler {
 	const MAX_PHOTO_WIDTH = 200;
 	const MAX_PHOTO_HEIGHT = 200;
 	
-	function getUploadedPhotoData($fieldName)
+	public static function getUploadedPhotoData($fieldName)
 	{
 		if (!empty($_FILES[$fieldName]) && !empty($_FILES[$fieldName]['name'])) {
 			if (!empty($_FILES[$fieldName]['error'])) {
@@ -24,7 +24,8 @@ Class Photo_Handler {
 				trigger_error("Security error with file upload", E_USER_ERROR);
 				return NULL;
 			} else {
-				$ext = strtolower(end(explode('.', $_FILES[$fieldName]['name'])));
+				$bits = explode('.', $_FILES[$fieldName]['name']);
+				$ext = strtolower(end($bits));
 				if ($ext == 'jpg') $ext = 'jpeg';
 				if (!in_array($ext, Array('jpeg', 'gif', 'png'))) {
 					add_message("The uploaded photo was not of a permitted type and has not been saved.  Photos must be JPEG, GIF or PNG", 'error');
@@ -71,10 +72,40 @@ Class Photo_Handler {
 
 	public static function getDataURL($type, $id)
 	{
-		$SQL = 'SELECT photodata FROM '.$type.'_photo WHERE '.$type.'id = '.(int)$id;
-		$res = $GLOBALS['db']->queryOne($SQL);
-		check_db_result($res);
-		return 'data:image/jpg;base64,'.base64_encode($res);
+		if ($res = self::getPhotoData($type, $id)) {
+			return 'data:image/jpg;base64,'.base64_encode($res);
+		} else {
+			return 'data:image/gif;base64,'.base64_encode(file_get_contents(JETHRO_ROOT.'/resources/img/unknown_family.gif'));
+		}
+	}
+
+	public static function getPhotoData($type, $id)
+	{
+		$db = $GLOBALS['db'];
+		$SQL = $obj = NULL;
+		if ($type == 'person') {
+			$obj = $GLOBALS['system']->getDBObject('person', (int)$id);
+			if ($obj) $SQL = 'SELECT photodata FROM person_photo WHERE personid = '.$obj->id;
+		} else if ($type == 'family') {
+			$obj = $GLOBALS['system']->getDBObject('family', (int)$id);
+			if ($obj) {
+				// for single-member families, treat person photo as family photo
+				$SQL = 'SELECT COALESCE(fp.photodata, IF(count(p.id) = 1, pp.photodata, NULL)) as photodata
+						FROM family f
+						LEFT JOIN family_photo fp ON fp.familyid = f.id
+						LEFT JOIN person p ON p.familyid = f.id
+						LEFT JOIN person_photo pp ON pp.personid = p.id
+						WHERE f.id = '.(int)$obj->id.'
+						GROUP BY f.id';
+			}
+
+		}
+		if ($obj) {
+			$res = $GLOBALS['db']->queryOne($SQL);
+			if ($res) {
+				return $res;
+			}
+		}
 	}
 
 }

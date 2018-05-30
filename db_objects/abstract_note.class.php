@@ -47,7 +47,7 @@ class Abstract_Note extends DB_Object
 								'default'		=> $GLOBALS['user_system']->getCurrentUser('id'),
 								'note'			=> 'Choose the user responsible for acting on this note',
 								'allow_empty'	=> true,
-								'filter'		=> create_function('$x', 'return $x->getValue("active") && (($x->getValue("permissions") & PERM_EDITNOTE) == PERM_EDITNOTE);'),
+								'filter'		=> function($x) {return $x->getValue("active") && (($x->getValue("permissions") & PERM_EDITNOTE) == PERM_EDITNOTE);},
 							   ),
 			'assignee_last_changed' => Array(
 									'type'				=> 'datetime',
@@ -76,6 +76,7 @@ class Abstract_Note extends DB_Object
 								'editable'		=> false,
 								'references'	=> 'person',
 								'visible'		=> false,
+								'default'		=> 0,
 							   ),
 			'edited'		=> Array(
 								'type'			=> 'datetime',
@@ -158,13 +159,12 @@ class Abstract_Note extends DB_Object
 
 		// Get the comments to go with them
 		if (!empty($res)) {
-			$sql = 'SELECT c.noteid, c.*, p.first_name as creator_fn, p.last_name as creator_ln 
+			$sql = 'SELECT c.noteid, c.*, p.first_name as creator_fn, p.last_name as creator_ln
 					FROM note_comment c JOIN person p on c.creator = p.id
 					WHERE noteid IN ('.implode(', ', array_keys($res)).')
 					ORDER BY noteid, created';
 			$db =& $GLOBALS['db'];
 			$comments = $db->queryAll($sql, null, null, true, false, true);
-			check_db_result($comments);
 			foreach ($res as $i => $v) {
 				$res[$i]['comments'] = array_get($comments, $i, Array());
 			}
@@ -188,7 +188,7 @@ class Abstract_Note extends DB_Object
 			$this->printFieldValue('status');
 		}
 	}
-	
+
 	/**
 	 * @return boolean	True if the current user is allowed to delete this note
 	 */
@@ -196,7 +196,7 @@ class Abstract_Note extends DB_Object
 		return ($this->getValue('status') !== 'pending')
 			&& ($GLOBALS['user_system']->havePerm(PERM_SYSADMIN));
 	}
-	
+
 	/**
 	 * @return boolean	True if the current user is allowed to edit the original content of this note
 	 */
@@ -215,10 +215,9 @@ class Abstract_Note extends DB_Object
 		$db =& $GLOBALS['db'];
 		$sql = 'DELETE FROM note_comment WHERE noteid = '.$db->quote($this->id);
 		$res = $db->query($sql);
-		check_db_result($res);
 		return TRUE;
 	}
-	
+
 	function save()
 	{
 		// If the subject or details is updated, set the 'editor' and 'edited' fields
@@ -235,7 +234,7 @@ class Abstract_Note extends DB_Object
 	function printUpdateForm()
 	{
 		?>
-		<form method="post" id="update-note" class="form-horizontal"  data-lock-length="<?php echo LOCK_LENGTH; ?>">
+		<form method="post" id="update-note" class="form-horizontal"  data-lock-length="<?php echo db_object::getLockLength() ?>">
 			<input type="hidden" name="update_note_submitted" value="1" />
 			<div class="control-group">
 				<label class="control-label">Comment</label>
@@ -322,4 +321,3 @@ class Abstract_Note extends DB_Object
 		return $GLOBALS['db']->queryAll($SQL);
 	}
 }
-
