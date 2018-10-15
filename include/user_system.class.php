@@ -46,7 +46,7 @@ class User_System extends Abstract_User_System
 				include_once 'include/size_detector.class.php';
 				SizeDetector::processRequest();
 				//BL 15-10-2018 Add login record to login_log table
-				$sql = ('insert into login_log set user='.(INT)$_SESSION['user']['id']
+				$sql = ('insert into login_log set user='.(INT)$_SESSION['user']['id']);
 				$loginlog = $GLOBALS['db']->query($sql);
 			}
 		}
