@@ -69,7 +69,7 @@ class Member_User_System extends Abstract_User_System
 			} else {
 				// Log the member in
 				$this->_setAuthMember($user_details);
-				redirect('home');
+				redirect(-1);
 				exit;
 			}
 	}
