@@ -21,8 +21,10 @@ class Call_email extends Call
 			$blanks = $GLOBALS['system']->getDBObjectData('person', Array('(id' => $personids, 'email' => '', '!status' => 'archived'), 'AND');
 			$archived = $GLOBALS['system']->getDBObjectData('person', Array('(id' => $personids, 'status' => 'archived'), 'AND');
 		} else if (!empty($_REQUEST['roster_view'])) {
-			$view = $GLOBALS['system']->getDBObject('roster_view', (int)$_REQUEST['roster_view']);
 			$recips = $view->getAssignees($_REQUEST['start_date'], $_REQUEST['end_date']);
+			foreach ((array)$_REQUEST['roster_view'] as $viewid) {
+				$recips += $view->getAssignees($_REQUEST['start_date'], $_REQUEST['end_date']);
+			}
 		} else {
 			if (empty($_REQUEST['personid'])) {
 				$recips = $emails = $blanks = $archived = Array();
