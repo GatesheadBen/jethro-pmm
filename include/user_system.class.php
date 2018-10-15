@@ -45,6 +45,9 @@ class User_System extends Abstract_User_System
 				$_SESSION['last_activity_time'] = time();
 				include_once 'include/size_detector.class.php';
 				SizeDetector::processRequest();
+				//BL 15-10-2018 Add login record to login_log table
+				$sql = ('insert into login_log set user='.(INT)$_SESSION['user']['id']
+				$loginlog = $GLOBALS['db']->query($sql);
 			}
 		}
 		if (!empty($_SESSION['user'])) {
