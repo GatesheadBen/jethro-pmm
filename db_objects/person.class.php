@@ -344,24 +344,19 @@ class Person extends DB_Object
 		$family_notes = $GLOBALS['system']->getDBObjectData('family_note', Array('familyid' => $this->getValue('familyid')));
 		$person_notes = $GLOBALS['system']->getDBObjectData('person_note', Array('personid' => $this->id));
 		$all_notes = $family_notes + $person_notes;
-		uasort($all_notes, Array($this, '_compsubjectcreateddate'));
+		uasort($all_notes, Array($this, '_compareCreatedDates'));
 		return $all_notes;
 	}
 
-	function _compsubjectcreateddate($a, $b) {
+	function _compareCreatedDates($a, $b)
+	{
 		if (ifdef('NOTES_ORDER', 'ASC') == 'ASC') {
-			if ($a['created'] == $b['created']) {
-				return $a['subject'] < $b['subject'];
-			}
 			return $a['created'] > $b['created'];
+		} else {
+			return $a['created'] < $b['created'];
 		}
-		else {
-		if ($a['created'] == $b['created']) {
-			return $a['subject'] > $b['subject'];
-		}
-		return $a['created'] < $b['created'];
 	}
-	
+
 	function validateFields()
 	{
 		if (!parent::validateFields()) return FALSE;
